@@ -48,13 +48,6 @@ VIRTUALBOX_INT_SUBNET="255.255.255.0"
 LOG=$(mktemp)
 UPGRADE=true
 
-declare -a packages
-declare -a python_packages
-
-packages="git python python-pip libffi-dev libssl-dev python-virtualenv python-setuptools libjpeg-dev zlib1g-dev swig postgresql libpq-dev tcpdump apparmor-utils libtiff5-dev libjpeg8-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python-tk build-essential libssl-dev libffi-dev python-dev libssl-dev libjansson-dev virtualbox mongodb"
-#python_packages="pip setuptools cuckoo distorm3 yara-python"
-python_packages="pip setuptools cuckoo distorm3 yara-python==3.6.3 pycrypto"
-
 # Pretty icons
 log_icon="\e[31m✓\e[0m"
 log_icon_ok="\e[32m✓\e[0m"

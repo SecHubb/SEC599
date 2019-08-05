@@ -51,8 +51,7 @@ UPGRADE=true
 declare -a packages
 declare -a python_packages
 
-packages="git python python-pip libffi-dev libssl-dev python-virtualenv python-setuptools libjpeg-dev zlib1g-dev swig postgresql libpq-dev tcpdump apparmor-utils libtiff5-dev libjpeg8-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python-tk build-essential libssl-dev libffi-dev python-dev libssl-dev libjansson-dev virtualbox mongodb m2crypto==0.24.0 libguac-client-rdp0 libguac-client-vnc0 libguac-client-ssh0 guacd"
-#python_packages="pip setuptools cuckoo distorm3 yara-python"
+packages="git python python-pip libffi-dev libssl-dev python-virtualenv python-setuptools libjpeg-dev zlib1g-dev swig postgresql libpq-dev tcpdump apparmor-utils libtiff5-dev libjpeg8-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python-tk build-essential libssl-dev libffi-dev python-dev libssl-dev libjansson-dev virtualbox mongodb libguac-client-rdp0 libguac-client-vnc0 libguac-client-ssh0 guacd"
 python_packages="pip setuptools cuckoo distorm3 yara-python==3.6.3 pycrypto"
 
 # Pretty icons
@@ -122,7 +121,8 @@ setopts(){
 }
 
 run_and_log(){
-    $1 &> ${LOG} && {
+    #$1 &> ${LOG} && {
+    $1 && {
         _log_icon=$log_icon_ok
     } || {
         _log_icon=$log_icon_nok
@@ -160,13 +160,21 @@ create_hostonly_iface(){
     echo "vboxnet0 doesn't exist, creating it..."
     $SUDO vboxmanage hostonlyif create
     fi
-    $SUDO vboxmanage dhcpserver modify --ifname $VIRTUALBOX_INT_NAME --disable
-    $SUDO vboxmanage hostonlyif ipconfig $VIRTUALBOX_INT_NAME --ip $VIRTUALBOX_INT_ADDR --netmask $VIRTUALBOX_INT_SUBNET
-    $SUDO iptables -A FORWARD -o $INTERNET_INT_NAME -i $VIRTUALBOX_INT_NAME -s $VIRTUALBOX_INT_NETWORK -m conntrack --ctstate NEW -j ACCEPT
-    $SUDO iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-    $SUDO iptables -A POSTROUTING -t nat -j MASQUERADE
+
+    # $SUDO iptables -A FORWARD -o $INTERNET_INT_NAME -i $VIRTUALBOX_INT_NAME -s $VIRTUALBOX_INT_NETWORK -m conntrack --ctstate NEW -j ACCEPT
+    # $SUDO iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    # $SUDO iptables -A POSTROUTING -t nat -j MASQUERADE
+
+    sudo iptables -t nat -A POSTROUTING -o $VIRTUALBOX_INT_NAME -s $VIRTUALBOX_INT_NETWORK -j MASQUERADE
+    sudo iptables -P FORWARD DROP
+    sudo iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+    sudo iptables -A FORWARD -s $VIRTUALBOX_INT_NETWORK -j ACCEPT
+    sudo iptables -A FORWARD -s $VIRTUALBOX_INT_NETWORK -d $VIRTUALBOX_INT_NETWORK -j ACCEPT
 
     $SUDO sysctl -w net.ipv4.ip_forward=1
+    echo 1 | sudo tee -a /proc/sys/net/ipv4/ip_forward
+    #$SUDO vboxmanage dhcpserver modify --ifname $VIRTUALBOX_INT_NAME --disable
+    $SUDO vboxmanage hostonlyif ipconfig $VIRTUALBOX_INT_NAME --ip $VIRTUALBOX_INT_ADDR --netmask $VIRTUALBOX_INT_SUBNET
   return 0
 }
 
@@ -216,7 +224,7 @@ install_packages(){
 }
 
 install_python_packages(){
-    runuser -l $CUCKOO_USER -c 'pip install $python_packages --upgrade'
+    pip install $python_packages --upgrade
     return 0
 }
 
@@ -233,15 +241,15 @@ update_cuckoo_config(){
 
     # Update VM settings
     sed -i "s/label = cuckoo1/label = ${CUCKOO_GUEST_NAME}/g" /home/$CUCKOO_USER/.cuckoo/conf/virtualbox.conf
-    sed -i "s/ip = 192.168.56.101/ip = ${CUCKOO_GUEST_IP}/g" /home/$CUCKOO_USER/.cuckoo/conf/virtualbox.conf
+    sed -i "s/ip = 192.168.56.1/ip = ${CUCKOO_GUEST_IP}/g" /home/$CUCKOO_USER/.cuckoo/conf/virtualbox.conf
     sed -i "/\[mongodb\]/{ N; s/.*/\[mongodb\]\nenabled = yes/; }" /home/$CUCKOO_USER/.cuckoo/conf/reporting.conf
-    sed -i 's/"192.168.56.1"/"${VIRTUALBOX_INT_ADDR}"/g' /home/$CUCKOO_USER/.config/VirtualBox/VirtualBox.xml
-    sed -i '/DHCPServer/d' /home/$CUCKOO_USER/.config/VirtualBox/VirtualBox.xml
+#    sed -i 's/"192.168.56.1"/"${VIRTUALBOX_INT_ADDR}"/g' /home/$CUCKOO_USER/.config/VirtualBox/VirtualBox.xml
+#    sed -i '/DHCPServer/d' /home/$CUCKOO_USER/.config/VirtualBox/VirtualBox.xml
 }
 
 create_cuckoo_startup_scripts(){
-    $SUDO rm /root/cuckoo-start.sh
-    $SUDO rm /root/cuckoo-kill.sh
+    #$SUDO rm /root/cuckoo-start.sh
+    #$SUDO rm /root/cuckoo-kill.sh
     $SUDO echo "#!/bin/bash" >> /root/cuckoo-start.sh
     $SUDO echo "# Cuckoo run script" >> /root/cuckoo-start.sh
     $SUDO echo "#!/bin/bash" >> /root/cuckoo-kill.sh
@@ -249,19 +257,19 @@ create_cuckoo_startup_scripts(){
     $SUDO echo "killall cuckoo" >> /root/cuckoo-start.sh
     $SUDO echo "pkill -f 'cuckoo web runserver'" >> /root/cuckoo-start.sh
 
-    $SUDO echo "vboxmanage dhcpserver modify --ifname $VIRTUALBOX_INT_NAME --disable" >> /root/cuckoo-start.sh
     $SUDO echo "vboxmanage hostonlyif ipconfig $VIRTUALBOX_INT_NAME --ip $VIRTUALBOX_INT_ADDR --netmask $VIRTUALBOX_INT_SUBNET" >> /root/cuckoo-start.sh
-    $SUDO echo "iptables -A FORWARD -o $INTERNET_INT_NAME -i $VIRTUALBOX_INT_NAME -s $VIRTUALBOX_INT_NETWORK -m conntrack --ctstate NEW -j ACCEPT" >> /root/cuckoo-start.sh
-    $SUDO echo "iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" >> /root/cuckoo-start.sh
-    $SUDO echo "iptables -A POSTROUTING -t nat -j MASQUERADE" >> /root/cuckoo-start.sh
+    $SUDO echo "iptables -P FORWARD DROP" >> /root/cuckoo-start.sh
+    $SUDO echo "iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT" >> /root/cuckoo-start.sh
+    $SUDO echo "iptables -A FORWARD -s $VIRTUALBOX_INT_NETWORK -j ACCEPT" >> /root/cuckoo-start.sh
+    $SUDO echo "iptables -A FORWARD -s $VIRTUALBOX_INT_NETWORK -d $VIRTUALBOX_INT_NETWORK -j ACCEPT" >> /root/cuckoo-start.sh
     $SUDO echo "sysctl -w net.ipv4.ip_forward=1" >> /root/cuckoo-start.sh
-
+    
     $SUDO echo "killall cuckoo" >> /root/cuckoo-kill.sh
     $SUDO echo "pkill -f 'cuckoo web runserver'" >> /root/cuckoo-kill.sh
     $SUDO echo "runuser -l cuckoo -c 'cuckoo' &" >> /root/cuckoo-start.sh
     $SUDO echo "runuser -l cuckoo -c 'cuckoo web runserver 0.0.0.0:8000' &" >> /root/cuckoo-start.sh
     $SUDO echo "runuser -l cuckoo -c 'cuckoo api --host 0.0.0.0 --port 8090' &" >> /root/cuckoo-start.sh
-    $SUDO sed -i "/# By default this script does nothing./ { N; s/# By default this script does nothing./&\n\/root\/cuckoo-start.sh\n/ }" /etc/rc.local
+    #$SUDO sed -i "/# By default this script does nothing./ { N; s/# By default this script does nothing./&\n\/root\/cuckoo-start.sh\n/ }" /etc/rc.local
 
     $SUDO chmod +x /root/cuckoo-start.sh
     $SUDO chmod +x /root/cuckoo-kill.sh
@@ -280,7 +288,7 @@ source config &>/dev/null
 echo "Logging enabled on ${LOG}"
 
 # Install packages
-#run_and_log prepare_virtualbox "Getting virtualbox repo ready" "Virtualbox is running, please close it"
+run_and_log prepare_virtualbox "Getting virtualbox repo ready" "Virtualbox is running, please close it"
 run_and_log install_packages "Installing packages ${CUSTOM_PKGS} and ${packages[$RELEASE]}" "Something failed installing packages, please look at the log file"
 
 # Create user and clone repos
@@ -296,8 +304,6 @@ run_and_log install_python_packages "Installing python packages: ${python_packag
 # Networking (latest, because sometimes it crashes...)
 run_and_log create_hostonly_iface "Creating hostonly interface for cuckoo"
 run_and_log allow_tcpdump "Allowing tcpdump for normal users"
-
-
 
 # Configuring Cuckoo
 run_and_log run_cuckoo_community "Downloading community rules"
