@@ -22,8 +22,8 @@
 source /etc/os-release
 
 # Configuration variables. Tailor to your environment
-CUCKOO_GUEST_IMAGE="/tmp/W7-01.ova"
-CUCKOO_GUEST_NAME="vm"
+#CUCKOO_GUEST_IMAGE="/tmp/W7-01.ova"
+#CUCKOO_GUEST_NAME="vm"
 CUCKOO_GUEST_IP="192.168.56.1"
 INTERNET_INT_NAME="ens32"
 
@@ -228,6 +228,11 @@ install_python_packages(){
     return 0
 }
 
+update_suricata(){
+    $SUDO suricata-update
+    return 0
+}
+
 run_cuckoo_community(){
     runuser -l $CUCKOO_USER -c 'cuckoo'
     runuser -l $CUCKOO_USER -c 'cuckoo community'
@@ -297,6 +302,9 @@ run_and_log clone_repos "Cloning repositories" "Could not clone repos"
 
 # Install python packages
 run_and_log install_python_packages "Installing python packages: ${python_packages}" "Something failed install python packages, please look at the log file"
+
+# Update Suricata
+run_and_log update_suricata "Updating Suricata Signatures" "Suricata update failed"
 
 # Install volatility
 #run_and_log build_volatility "Installing volatility"
