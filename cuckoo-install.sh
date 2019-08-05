@@ -24,8 +24,8 @@ source /etc/os-release
 # Configuration variables. Tailor to your environment
 CUCKOO_GUEST_IMAGE="/tmp/W7-01.ova"
 CUCKOO_GUEST_NAME="vm"
-CUCKOO_GUEST_IP="192.168.87.15"
-INTERNET_INT_NAME="eth0"
+CUCKOO_GUEST_IP="192.168.56.1"
+INTERNET_INT_NAME="ens32"
 
 # Base variables. Only change these if you know what you are doing...
 SUDO="sudo"
@@ -35,14 +35,14 @@ CUCKOO_USER="cuckoo"
 CUCKOO_PASSWD="cuckoo"
 CUSTOM_PKGS=""
 ORIG_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}"  )" && pwd  )
-VOLATILITY_URL="http://downloads.volatilityfoundation.org/releases/2.4/volatility-2.4.tar.gz"
+#VOLATILITY_URL="http://downloads.volatilityfoundation.org/releases/2.4/volatility-2.4.tar.gz"
 YARA_REPO="https://github.com/plusvic/yara"
 
 VIRTUALBOX_REP="deb http://download.virtualbox.org/virtualbox/debian $RELEASE contrib"
 
 VIRTUALBOX_INT_NAME="vboxnet0"
-VIRTUALBOX_INT_NETWORK="192.168.87.0/24"
-VIRTUALBOX_INT_ADDR="192.168.87.1"
+VIRTUALBOX_INT_NETWORK="192.168.56.0/24"
+VIRTUALBOX_INT_ADDR="192.168.56.1"
 VIRTUALBOX_INT_SUBNET="255.255.255.0"
 
 LOG=$(mktemp)
@@ -51,7 +51,7 @@ UPGRADE=true
 declare -a packages
 declare -a python_packages
 
-packages="git python python-pip libffi-dev libssl-dev python-virtualenv python-setuptools libjpeg-dev zlib1g-dev swig postgresql libpq-dev tcpdump apparmor-utils libtiff5-dev libjpeg8-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python-tk build-essential libssl-dev libffi-dev python-dev libssl-dev libjansson-dev virtualbox mongodb"
+packages="git python python-pip libffi-dev libssl-dev python-virtualenv python-setuptools libjpeg-dev zlib1g-dev swig postgresql libpq-dev tcpdump apparmor-utils libtiff5-dev libjpeg8-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev python-tk build-essential libssl-dev libffi-dev python-dev libssl-dev libjansson-dev virtualbox mongodb m2crypto==0.24.0 libguac-client-rdp0 libguac-client-vnc0 libguac-client-ssh0 guacd"
 #python_packages="pip setuptools cuckoo distorm3 yara-python"
 python_packages="pip setuptools cuckoo distorm3 yara-python==3.6.3 pycrypto"
 
@@ -189,14 +189,14 @@ build_yara(){
     return 0
 }
 
-build_volatility(){
-    wget $VOLATILITY_URL
-    tar xvf volatility-2.4.tar.gz
-    cd volatility-2.4/
-    $SUDO python setup.py build
-    $SUDO python setup.py install
-    return 0
-}
+# build_volatility(){
+#     wget $VOLATILITY_URL
+#     tar xvf volatility-2.4.tar.gz
+#     cd volatility-2.4/
+#     $SUDO python setup.py build
+#     $SUDO python setup.py install
+#     return 0
+# }
 
 prepare_virtualbox(){
     cd ${TMPDIR}
@@ -216,7 +216,7 @@ install_packages(){
 }
 
 install_python_packages(){
-    pip install $python_packages --upgrade
+    runuser -l $CUCKOO_USER -c 'pip install $python_packages --upgrade'
     return 0
 }
 
@@ -224,35 +224,6 @@ run_cuckoo_community(){
     runuser -l $CUCKOO_USER -c 'cuckoo'
     runuser -l $CUCKOO_USER -c 'cuckoo community'
     return 0
-}
-
-# The imported virtualbox VM should have the following config:
-# - Installed Python 2.7
-# - Installed Cuckoo Agent
-# - Disabled UAC, AV, Updates, Firewall
-# - Any other software that is to be installed
-# - IP settings: 192.168.87.15 - 255.255.255.0 - GW:192.168.87.1 DNS:192.168.87.1
-
-import_virtualbox_vm(){
-    runuser -l $CUCKOO_USER -c "vboxmanage import ${CUCKOO_GUEST_IMAGE}"
-    runuser -l $CUCKOO_USER -c "vboxmanage modifyvm ${CUCKOO_GUEST_NAME} --nic1 hostonly --hostonlyadapter1 ${VIRTUALBOX_INT_NAME}"
-    return 0
-}
-
-launch_virtualbox_vm(){
-    runuser -l $CUCKOO_USER -c "vboxmanage startvm ${CUCKOO_GUEST_NAME} --type headless"
-    return 0
-}
-
-create_virtualbox_vm_snapshot(){
-    runuser -l $CUCKOO_USER -c "vboxmanage snapshot ${CUCKOO_GUEST_NAME} take clean"
-    return 0
-}
-
-poweroff_virtualbox_vm(){
-    runuser -l $CUCKOO_USER -c "vboxmanage controlvm ${CUCKOO_GUEST_NAME} poweroff"
-    sleep 30
-    runuser -l $CUCKOO_USER -c "vboxmanage snapshot ${CUCKOO_GUEST_NAME} restorecurrent"
 }
 
 update_cuckoo_config(){
@@ -309,7 +280,7 @@ source config &>/dev/null
 echo "Logging enabled on ${LOG}"
 
 # Install packages
-run_and_log prepare_virtualbox "Getting virtualbox repo ready" "Virtualbox is running, please close it"
+#run_and_log prepare_virtualbox "Getting virtualbox repo ready" "Virtualbox is running, please close it"
 run_and_log install_packages "Installing packages ${CUSTOM_PKGS} and ${packages[$RELEASE]}" "Something failed installing packages, please look at the log file"
 
 # Create user and clone repos
@@ -320,18 +291,13 @@ run_and_log clone_repos "Cloning repositories" "Could not clone repos"
 run_and_log install_python_packages "Installing python packages: ${python_packages}" "Something failed install python packages, please look at the log file"
 
 # Install volatility
-run_and_log build_volatility "Installing volatility"
+#run_and_log build_volatility "Installing volatility"
 
 # Networking (latest, because sometimes it crashes...)
 run_and_log create_hostonly_iface "Creating hostonly interface for cuckoo"
 run_and_log allow_tcpdump "Allowing tcpdump for normal users"
 
-# Preparing VirtualBox VM
-run_and_log import_virtualbox_vm "Importing specified VirtualBoxVM"
-run_and_log launch_virtualbox_vm "Launching imported VM"
-sleep 60
-run_and_log create_virtualbox_vm_snapshot "Creating snapshot 'Clean'"
-run_and_log poweroff_virtualbox_vm
+
 
 # Configuring Cuckoo
 run_and_log run_cuckoo_community "Downloading community rules"
